@@ -1,0 +1,81 @@
+﻿#pragma kernel Triangulate
+#include "/TriangulationTable.compute"
+#define NUM_THREADS 8
+
+struct Triangle {
+    float3 vertex_a;
+    float3 vertex_b;
+    float3 vertex_c;
+};
+
+AppendStructuredBuffer<Triangle> triangles;
+RWStructuredBuffer<float> data;
+
+int points_per_axis = 256;
+float3 offset = 0;
+float step_size = 0.5;
+
+float value_at_coord(int3 id);
+float3 weighted_vertex_position(int3 coord1, int3 coord2);
+
+[numthreads(NUM_THREADS, NUM_THREADS, NUM_THREADS)]
+void Triangulate (int3 id : SV_DispatchThreadID) {
+    if (id.x >= points_per_axis - 1 || id.x >= points_per_axis - 1 || id.x >= points_per_axis - 1)
+        return;
+
+    int3 corner_coords[8];
+    corner_coords[0] = id + int3(0, 0, 0);
+    corner_coords[1] = id + int3(1, 0, 0);
+    corner_coords[2] = id + int3(1, 0, 1);
+    corner_coords[3] = id + int3(0, 0, 1);
+    corner_coords[4] = id + int3(0, 1, 0);
+    corner_coords[5] = id + int3(1, 1, 0);
+    corner_coords[6] = id + int3(1, 1, 1);
+    corner_coords[7] = id + int3(0, 1, 1);
+
+    int cube_config = 0;
+    for (int i = 0; i < 8; i++) {
+        if (value_at_coord(corner_coords[i]) < 0) {
+            cube_config |= 1 << i;
+        }
+    }
+
+    int cube_triangles[] = triangulation[cube_config];
+    for (i = 0; cube_triangles[i] != -1; i += 3) {
+        int a0 = edge_corner_index_1[cube_triangles[i]];
+        int a1 = edge_corner_index_2[cube_triangles[i]];
+        int b0 = edge_corner_index_1[cube_triangles[i + 1]];
+        int b1 = edge_corner_index_2[cube_triangles[i + 1]];
+        int c0 = edge_corner_index_1[cube_triangles[i + 2]];
+        int c1 = edge_corner_index_2[cube_triangles[i + 2]];
+
+        Triangle tri;
+        tri.vertex_a = weighted_vertex_position(corner_coords[a0], corner_coords[a1]);
+        tri.vertex_b = weighted_vertex_position(corner_coords[b0], corner_coords[b1]);
+        tri.vertex_c = weighted_vertex_position(corner_coords[c0], corner_coords[c1]);
+        triangles.Append(tri);
+    }
+}
+
+float3 vertex_position(int3 id) {
+    return offset + step_size * id;
+}
+
+int index_from_coord(int3 id) {
+    return id.z + points_per_axis * id.y + points_per_axis * points_per_axis * id.x;
+}
+
+float value_at_coord(int3 id) {
+    return data[index_from_coord(id)];
+}
+
+float3 weighted_vertex_position(int3 coord1, int3 coord2) {
+    float weight1 = value_at_coord(coord1);
+    float weight2 = value_at_coord(coord2);
+    float lambda = (0 - weight1) / (weight2 - weight1);
+
+    float3 vert1 = vertex_position(coord1);
+    float3 vert2 = vertex_position(coord2);
+    return vert1 + lambda * (vert2 - vert1);
+}
+

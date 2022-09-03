@@ -1,0 +1,21 @@
+﻿#pragma kernel CSMain
+
+RWStructuredBuffer<float> data;
+float radius = 1;
+int points_per_axis = 256;
+float3 chunk_offset = 0;
+float3 chunk_size = 128;
+
+[numthreads(8,8,8)]
+void CSMain (int3 id : SV_DispatchThreadID)
+{
+    if (id.x >= points_per_axis || id.y >= points_per_axis || id.z >= points_per_axis) {
+        return;
+    }
+
+    int index = id.z + points_per_axis * id.y + points_per_axis * points_per_axis * id.x;
+
+    float3 pos = chunk_offset + id * chunk_size / (points_per_axis - 1);
+    float sqrDst = dot(pos, pos);
+    data[index] = sqrDst - radius * radius;
+}

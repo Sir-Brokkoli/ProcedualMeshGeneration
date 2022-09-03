@@ -1,0 +1,55 @@
+﻿#pragma kernel CSMain
+#include "/PerlinNoise.compute"
+
+RWStructuredBuffer<float> data;
+int points_per_axis = 256;
+float3 chunk_offset = 0;
+float3 chunk_size = 128;
+
+float noise_weight = 1;
+float radius = 25;
+float amplitude = 100;
+float scale = 1;
+int octaves = 6;
+
+float c_height_factor(float c) {
+    if (c > 40) return 31;
+    if (c > 10) return c - 9;
+    if (c > -10) return c / 10;
+    if (c > -20) return 4 * c + 39;
+    return -41;
+}
+
+float e_height_factor(float e) {
+    return 1;
+}
+
+float height(float c, float e) {
+    return c_height_factor(c) * e_height_factor(e);
+}
+
+[numthreads(8,8,8)]
+void CSMain (int3 id : SV_DispatchThreadID)
+{
+    if (id.x >= points_per_axis || id.y >= points_per_axis || id.z >= points_per_axis) {
+        return;
+    }
+
+    int index = id.z + points_per_axis * id.y + points_per_axis * points_per_axis * id.x;
+
+    float3 pos = chunk_offset + id * chunk_size / (points_per_axis - 1);
+    float dst = sqrt(dot(pos, pos));
+
+    float c_param = 0;
+    float e_param = 0;
+    float noice_value = 0;
+
+    for (int i = 0; i < octaves; i++) {
+        c_param += amplitude * snoise((pos / dst) * scale * radius);
+        e_param += amplitude * snoise((pos / dst) * scale * radius + float3(1290,1244,1241));
+        noice_value += amplitude * snoise(pos * scale * 20);
+        amplitude /= 2;
+        scale *= 2;
+    }
+    data[index] = 3 * e_param * noice_value + dst - radius - height(noise_weight * c_param, 1);
+}
